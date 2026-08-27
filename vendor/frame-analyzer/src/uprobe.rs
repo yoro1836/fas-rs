@@ -18,7 +18,7 @@
  */
 use aya::{
     Ebpf,
-    maps::{MapData, RingBuf},
+    maps::{Array, MapData, RingBuf},
     programs::UProbe,
 };
 
@@ -39,6 +39,10 @@ impl Drop for UprobeHandler {
 impl UprobeHandler {
     pub fn attach_app(pid: i32) -> Result<Self> {
         let mut bpf = load_bpf()?;
+        {
+            let mut target_tgid = Array::<_, u32>::try_from(bpf.map_mut("TARGET_TGID").unwrap())?;
+            target_tgid.set(0, pid as u32, 0)?;
+        }
 
         let program: &mut UProbe = bpf.program_mut("frame_analyzer_ebpf").unwrap().try_into()?;
         program.load()?;
@@ -49,7 +53,7 @@ impl UprobeHandler {
                 ),
                 0,
                 "/system/lib64/libgui.so",
-                Some(pid),
+                None,
             )
             .is_ok();
         let batch_attached = program
@@ -59,7 +63,7 @@ impl UprobeHandler {
                 ),
                 0,
                 "/system/lib64/libgui.so",
-                Some(pid),
+                None,
             )
             .is_ok();
 
@@ -70,7 +74,7 @@ impl UprobeHandler {
                 ),
                 0,
                 "/system/lib64/libgui.so",
-                Some(pid),
+                None,
             )?;
         }
 

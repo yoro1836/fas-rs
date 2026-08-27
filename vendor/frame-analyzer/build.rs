@@ -73,8 +73,11 @@ fn install_bpf_linker() -> Result<PathBuf> {
 }
 
 fn build_ebpf(bpf_linker: &Path) -> Result<()> {
-    let current_dir = env::current_dir()?;
-    let project_path = current_dir.parent().unwrap().join("frame-analyzer-ebpf");
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")?;
+    let project_path = Path::new(&manifest_dir)
+        .parent()
+        .unwrap()
+        .join("frame-analyzer-ebpf");
     let out_dir = env::var("OUT_DIR")?;
     let out_dir = Path::new(&out_dir);
     let target_dir = out_dir.join("ebpf_target");
