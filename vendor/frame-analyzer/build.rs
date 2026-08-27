@@ -29,8 +29,18 @@ fn main() -> Result<()> {
     build_ebpf(&bpf_linker)?;
     Ok(())
 }
+fn find_bpf_linker() -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    env::split_paths(&path)
+        .map(|directory| directory.join("bpf-linker"))
+        .find(|candidate| candidate.is_file())
+}
 
 fn install_bpf_linker() -> Result<PathBuf> {
+    if let Some(bpf_linker) = find_bpf_linker() {
+        return Ok(bpf_linker);
+    }
+
     let out_dir = env::var("OUT_DIR")?;
     let target_dir = Path::new(&out_dir).join("temp_target");
     let target_dir_str = target_dir.to_str().unwrap();
