@@ -185,7 +185,8 @@ impl Analyzer {
     /// # }
     /// ```
     pub fn attach_app(&mut self, pid: Pid) -> Result<()> {
-        if self.contains(pid) {
+        if let Some(target) = self.map.get_mut(&pid) {
+            target.uprobe.refresh_threads(pid)?;
             return Ok(());
         }
 

@@ -16,6 +16,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+use std::{
+    collections::HashSet,
+    fs,
+    time::{Duration, Instant},
+};
+
 use aya::{
     Ebpf,
     maps::{Array, MapData, RingBuf},
@@ -23,9 +29,24 @@ use aya::{
 };
 
 use crate::{ebpf::load_bpf, error::Result};
+const LIBGUI_PATH: &str = "/system/lib64/libgui.so";
+const SYMBOL_SINGLE: &str =
+    "_ZN7android7Surface16hook_queueBufferEP13ANativeWindowP19ANativeWindowBufferi";
+const SYMBOL_BATCH: &str = "_ZN7android7Surface12queueBuffersERKNSt3__16vectorINS0_17BatchQueuedBufferENS1_9allocatorIS3_EEEEPNS2_INS_24SurfaceQueueBufferOutputENS4_IS9_EEEE";
+const SYMBOL_FALLBACK: &str = "_ZN7android7Surface11queueBufferEONS_2spINS_13GraphicBufferEEEiPNS_24SurfaceQueueBufferOutputE";
+const THREAD_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+fn thread_ids(pid: i32) -> std::io::Result<Vec<i32>> {
+    let tids = fs::read_dir(format!("/proc/{pid}/task"))?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().to_str()?.parse::<i32>().ok())
+        .collect();
+    Ok(tids)
+}
 
 pub struct UprobeHandler {
     bpf: Ebpf,
+    attached_tids: HashSet<i32>,
+    last_thread_refresh: Instant,
 }
 
 impl Drop for UprobeHandler {
@@ -46,39 +67,57 @@ impl UprobeHandler {
 
         let program: &mut UProbe = bpf.program_mut("frame_analyzer_ebpf").unwrap().try_into()?;
         program.load()?;
-        let single_attached = program
-            .attach(
-                Some(
-                    "_ZN7android7Surface16hook_queueBufferEP13ANativeWindowP19ANativeWindowBufferi",
-                ),
-                0,
-                "/system/lib64/libgui.so",
-                None,
-            )
-            .is_ok();
-        let batch_attached = program
-            .attach(
-                Some(
-                    "_ZN7android7Surface12queueBuffersERKNSt3__16vectorINS0_17BatchQueuedBufferENS1_9allocatorIS3_EEEEPNS2_INS_24SurfaceQueueBufferOutputENS4_IS9_EEEE",
-                ),
-                0,
-                "/system/lib64/libgui.so",
-                None,
-            )
-            .is_ok();
 
-        if !single_attached && !batch_attached {
-            program.attach(
-                Some(
-                    "_ZN7android7Surface11queueBufferEONS_2spINS_13GraphicBufferEEEiPNS_24SurfaceQueueBufferOutputE",
-                ),
-                0,
-                "/system/lib64/libgui.so",
-                None,
-            )?;
+        let mut handler = Self {
+            bpf,
+            attached_tids: HashSet::new(),
+            last_thread_refresh: Instant::now(),
+        };
+        handler.attach_thread(pid)?;
+        handler.refresh_threads_inner(pid)?;
+        Ok(handler)
+    }
+
+    pub fn refresh_threads(&mut self, pid: i32) -> Result<()> {
+        if self.last_thread_refresh.elapsed() < THREAD_REFRESH_INTERVAL {
+            return Ok(());
         }
 
-        Ok(Self { bpf })
+        self.refresh_threads_inner(pid)?;
+        self.last_thread_refresh = Instant::now();
+        Ok(())
+    }
+
+    fn refresh_threads_inner(&mut self, pid: i32) -> Result<()> {
+        let mut tids = thread_ids(pid)?
+            .into_iter()
+            .filter(|tid| !self.attached_tids.contains(tid))
+            .collect::<Vec<_>>();
+        tids.sort_unstable();
+
+        for tid in tids {
+            let _ = self.attach_thread(tid);
+        }
+        Ok(())
+    }
+
+    fn attach_thread(&mut self, tid: i32) -> Result<()> {
+        {
+            let program = self.get_program()?;
+            let single_attached = program
+                .attach(Some(SYMBOL_SINGLE), 0, LIBGUI_PATH, Some(tid))
+                .is_ok();
+            let batch_attached = program
+                .attach(Some(SYMBOL_BATCH), 0, LIBGUI_PATH, Some(tid))
+                .is_ok();
+
+            if !single_attached && !batch_attached {
+                program.attach(Some(SYMBOL_FALLBACK), 0, LIBGUI_PATH, Some(tid))?;
+            }
+        }
+
+        self.attached_tids.insert(tid);
+        Ok(())
     }
 
     pub fn ring(&mut self) -> Result<RingBuf<&mut MapData>> {
@@ -93,5 +132,16 @@ impl UprobeHandler {
             .unwrap()
             .try_into()?;
         Ok(program)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::thread_ids;
+
+    #[test]
+    fn reads_current_process_threads() {
+        let pid = std::process::id() as i32;
+        assert!(thread_ids(pid).unwrap().contains(&pid));
     }
 }
