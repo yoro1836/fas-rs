@@ -27,7 +27,6 @@ use aya::{
     Ebpf,
     maps::{Array, MapData, RingBuf},
     programs::UProbe,
-    util::online_cpus,
 };
 use aya_obj::generated::{AYA_PERF_EVENT_IOC_ENABLE, AYA_PERF_EVENT_IOC_SET_BPF, perf_event_attr};
 use object::{Object, ObjectSection, ObjectSymbol};
@@ -110,13 +109,12 @@ impl UprobeHandler {
             perf_events: Vec::new(),
         };
         let event_type = uprobe_type()?;
-        let cpus = online_cpus().map_err(|(_, error)| error)?;
         let mut attached = false;
 
         for symbol in [SYMBOL_SINGLE, SYMBOL_BATCH] {
             match resolve_symbol_offset(Path::new(LIBGUI_PATH), symbol) {
                 Ok(offset) => {
-                    handler.attach_offset(event_type, offset, &cpus)?;
+                    handler.attach_offset(event_type, offset)?;
                     attached = true;
                 }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -126,54 +124,51 @@ impl UprobeHandler {
 
         if !attached {
             let offset = resolve_symbol_offset(Path::new(LIBGUI_PATH), SYMBOL_FALLBACK)?;
-            handler.attach_offset(event_type, offset, &cpus)?;
+            handler.attach_offset(event_type, offset)?;
         }
 
         Ok(handler)
     }
 
-    fn attach_offset(&mut self, event_type: u32, offset: u64, cpus: &[u32]) -> Result<()> {
+    fn attach_offset(&mut self, event_type: u32, offset: u64) -> Result<()> {
         let path = CString::new(LIBGUI_PATH).unwrap();
         let program_fd = self.get_program()?.fd()?.as_fd().as_raw_fd();
+        let mut attr = unsafe { mem::zeroed::<perf_event_attr>() };
+        attr.size = mem::size_of::<perf_event_attr>() as u32;
+        attr.type_ = event_type;
+        attr.__bindgen_anon_3.config1 = path.as_ptr() as u64;
+        attr.__bindgen_anon_4.config2 = offset;
 
-        for &cpu in cpus {
-            let mut attr = unsafe { mem::zeroed::<perf_event_attr>() };
-            attr.size = mem::size_of::<perf_event_attr>() as u32;
-            attr.type_ = event_type;
-            attr.__bindgen_anon_3.config1 = path.as_ptr() as u64;
-            attr.__bindgen_anon_4.config2 = offset;
-
-            let raw_fd = unsafe {
-                libc::syscall(
-                    libc::SYS_perf_event_open,
-                    &attr,
-                    -1,
-                    cpu as libc::c_int,
-                    -1,
-                    PERF_FLAG_FD_CLOEXEC,
-                )
-            };
-            if raw_fd < 0 {
-                return Err(io::Error::last_os_error().into());
-            }
-            let perf_event = unsafe { OwnedFd::from_raw_fd(raw_fd as i32) };
-
-            if unsafe {
-                perf_ioctl(
-                    perf_event.as_raw_fd(),
-                    AYA_PERF_EVENT_IOC_SET_BPF,
-                    program_fd,
-                )
-            } < 0
-            {
-                return Err(io::Error::last_os_error().into());
-            }
-            if unsafe { perf_ioctl(perf_event.as_raw_fd(), AYA_PERF_EVENT_IOC_ENABLE, 0) } < 0 {
-                return Err(io::Error::last_os_error().into());
-            }
-
-            self.perf_events.push(perf_event);
+        let raw_fd = unsafe {
+            libc::syscall(
+                libc::SYS_perf_event_open,
+                &attr,
+                -1,
+                0,
+                -1,
+                PERF_FLAG_FD_CLOEXEC,
+            )
+        };
+        if raw_fd < 0 {
+            return Err(io::Error::last_os_error().into());
         }
+        let perf_event = unsafe { OwnedFd::from_raw_fd(raw_fd as i32) };
+
+        if unsafe {
+            perf_ioctl(
+                perf_event.as_raw_fd(),
+                AYA_PERF_EVENT_IOC_SET_BPF,
+                program_fd,
+            )
+        } < 0
+        {
+            return Err(io::Error::last_os_error().into());
+        }
+        if unsafe { perf_ioctl(perf_event.as_raw_fd(), AYA_PERF_EVENT_IOC_ENABLE, 0) } < 0 {
+            return Err(io::Error::last_os_error().into());
+        }
+
+        self.perf_events.push(perf_event);
         Ok(())
     }
 
