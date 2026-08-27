@@ -285,6 +285,11 @@ impl Analyzer {
     /// # }
     /// ```
     pub fn recv(&mut self) -> Option<(Pid, Duration)> {
+        if let Some(data) = self.drain_targets() {
+            self.buffer.clear();
+            return Some(data);
+        }
+
         if self.buffer.is_empty() {
             if let Some(ref mut poll) = self.poll {
                 let mut events = Events::with_capacity(EVENT_MAX);
@@ -329,6 +334,11 @@ impl Analyzer {
     /// # }
     /// ```
     pub fn recv_timeout(&mut self, time: Duration) -> Option<(Pid, Duration)> {
+        if let Some(data) = self.drain_targets() {
+            self.buffer.clear();
+            return Some(data);
+        }
+
         if self.buffer.is_empty() {
             if let Some(ref mut poll) = self.poll {
                 let mut events = Events::with_capacity(EVENT_MAX);
@@ -355,6 +365,12 @@ impl Analyzer {
     /// An iterator visiting all attched pids in arbitrary order
     pub fn pids(&self) -> impl Iterator<Item = Pid> + '_ {
         self.map.keys().copied()
+    }
+
+    fn drain_targets(&mut self) -> Option<(Pid, Duration)> {
+        self.map
+            .iter_mut()
+            .find_map(|(&pid, target)| target.update().map(|frametime| (pid, frametime)))
     }
 
     fn register_poll(&mut self) -> Result<()> {
