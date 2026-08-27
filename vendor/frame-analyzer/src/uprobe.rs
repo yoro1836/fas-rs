@@ -42,19 +42,37 @@ impl UprobeHandler {
 
         let program: &mut UProbe = bpf.program_mut("frame_analyzer_ebpf").unwrap().try_into()?;
         program.load()?;
-        program.attach(
-            Some("_ZN7android7Surface16hook_queueBufferEP13ANativeWindowP19ANativeWindowBufferi"),
-            0,
-            "/system/lib64/libgui.so",
-            Some(pid),
-        ).or_else(|_e1| {
-            program.attach(
-                Some("_ZN7android7Surface11queueBufferEONS_2spINS_13GraphicBufferEEEiPNS_24SurfaceQueueBufferOutputE"),
+        let single_attached = program
+            .attach(
+                Some(
+                    "_ZN7android7Surface16hook_queueBufferEP13ANativeWindowP19ANativeWindowBufferi",
+                ),
                 0,
                 "/system/lib64/libgui.so",
                 Some(pid),
             )
-        })?;
+            .is_ok();
+        let batch_attached = program
+            .attach(
+                Some(
+                    "_ZN7android7Surface12queueBuffersERKNSt3__16vectorINS0_17BatchQueuedBufferENS1_9allocatorIS3_EEEEPNS2_INS_24SurfaceQueueBufferOutputENS4_IS9_EEEE",
+                ),
+                0,
+                "/system/lib64/libgui.so",
+                Some(pid),
+            )
+            .is_ok();
+
+        if !single_attached && !batch_attached {
+            program.attach(
+                Some(
+                    "_ZN7android7Surface11queueBufferEONS_2spINS_13GraphicBufferEEEiPNS_24SurfaceQueueBufferOutputE",
+                ),
+                0,
+                "/system/lib64/libgui.so",
+                Some(pid),
+            )?;
+        }
 
         Ok(Self { bpf })
     }
