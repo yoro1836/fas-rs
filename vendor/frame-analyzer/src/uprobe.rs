@@ -28,7 +28,7 @@ use aya::{
     programs::UProbe,
 };
 
-use crate::{ebpf::load_bpf, error::Result};
+use crate::{ebpf::load_bpf, error::{AnalyzerError, Result}};
 
 const LIBGUI_PATH: &str = "/system/lib64/libgui.so";
 const SYMBOL_SINGLE: &str =
@@ -47,6 +47,7 @@ fn thread_ids(pid: i32) -> std::io::Result<Vec<i32>> {
 
 pub struct UprobeHandler {
     bpf: Ebpf,
+    ring: RingBuf<MapData>,
     symbol: &'static str,
     attached_tids: HashSet<i32>,
     last_thread_refresh: Instant,
@@ -71,8 +72,17 @@ impl UprobeHandler {
         let program: &mut UProbe = bpf.program_mut("frame_analyzer_ebpf").unwrap().try_into()?;
         program.load()?;
 
+        // The ring buffer must live as long as the handler: aya keeps a
+        // per-instance producer position cache, so recreating the RingBuf on
+        // every drain loses the cache and lets the consumer overrun the
+        // producer, feeding stale records forever.
+        let ring = RingBuf::try_from(
+            bpf.take_map("RING_BUF").ok_or(AnalyzerError::MapError)?,
+        )?;
+
         let mut handler = Self {
             bpf,
+            ring,
             symbol: SYMBOL_SINGLE,
             attached_tids: HashSet::new(),
             last_thread_refresh: Instant::now(),
@@ -122,9 +132,8 @@ impl UprobeHandler {
         Ok(())
     }
 
-    pub fn ring(&mut self) -> Result<RingBuf<&mut MapData>> {
-        let ring: RingBuf<&mut MapData> = RingBuf::try_from(self.bpf.map_mut("RING_BUF").unwrap())?;
-        Ok(ring)
+    pub fn ring(&mut self) -> Result<&mut RingBuf<MapData>> {
+        Ok(&mut self.ring)
     }
 
     fn get_program(&mut self) -> Result<&mut UProbe> {
