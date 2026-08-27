@@ -367,13 +367,30 @@ impl Analyzer {
     pub fn pids(&self) -> impl Iterator<Item = Pid> + '_ {
         self.map.keys().copied()
     }
-
     fn drain_targets(&mut self) -> Option<(Pid, Duration)> {
+        #[cfg(debug_assertions)]
+        {
+            static LAST_DEBUG_LOG: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
+
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_millis() as u64);
+
+            if timestamp.saturating_sub(LAST_DEBUG_LOG.load(std::sync::atomic::Ordering::Relaxed))
+                >= 1000
+            {
+                LAST_DEBUG_LOG.store(timestamp, std::sync::atomic::Ordering::Relaxed);
+                for (pid, _) in self.map.iter_mut() {
+                    eprintln!("fas-debug: drain_targets sees analyzer for PID {pid}");
+                }
+            }
+        }
+
         self.map
             .iter_mut()
             .find_map(|(&pid, target)| target.update().map(|frametime| (pid, frametime)))
     }
-
     fn register_poll(&mut self) -> Result<()> {
         let poll = Poll::new()?;
 
