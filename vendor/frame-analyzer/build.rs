@@ -82,6 +82,7 @@ fn build_ebpf(bpf_linker: &Path) -> Result<()> {
     let out_dir = Path::new(&out_dir);
     let target_dir = out_dir.join("ebpf_target");
     let target_dir_str = target_dir.to_str().unwrap();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH")?;
 
     if !target_dir.exists() {
         fs::create_dir(&target_dir)?;
@@ -108,6 +109,10 @@ fn build_ebpf(bpf_linker: &Path) -> Result<()> {
             .env_remove("RUSTUP_TOOLCHAIN")
             .current_dir(&project_path)
             .env("CARGO_TARGET_BPFEL_UNKNOWN_NONE_LINKER", bpf_linker)
+            .env(
+                "CARGO_ENCODED_RUSTFLAGS",
+                format!("--cfg=bpf_target_arch=\"{target_arch}\""),
+            )
             .status()?;
         if !status.success() {
             bail!("failed to build local frame-analyzer-ebpf");
@@ -123,6 +128,10 @@ fn build_ebpf(bpf_linker: &Path) -> Result<()> {
             .args(["--root", target_dir_str])
             .env_remove("RUSTUP_TOOLCHAIN")
             .env("CARGO_TARGET_BPFEL_UNKNOWN_NONE_LINKER", bpf_linker)
+            .env(
+                "CARGO_ENCODED_RUSTFLAGS",
+                format!("--cfg=bpf_target_arch=\"{target_arch}\""),
+            )
             .status()?;
         if !status.success() {
             bail!("failed to install frame-analyzer-ebpf");
