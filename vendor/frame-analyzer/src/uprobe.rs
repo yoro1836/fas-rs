@@ -43,7 +43,7 @@ impl UprobeHandler {
         let program: &mut UProbe = bpf.program_mut("frame_analyzer_ebpf").unwrap().try_into()?;
         program.load()?;
         program.attach(
-            Some("_ZN7android7Surface11queueBufferERKNS_2spINS_13GraphicBufferEEERKNS1_INS_5FenceEEEPNS_24SurfaceQueueBufferOutputE"),
+            Some("_ZN7android7Surface16hook_queueBufferEP13ANativeWindowP19ANativeWindowBufferi"),
             0,
             "/system/lib64/libgui.so",
             Some(pid),
