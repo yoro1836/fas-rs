@@ -370,19 +370,12 @@ impl Analyzer {
     fn drain_targets(&mut self) -> Option<(Pid, Duration)> {
         #[cfg(debug_assertions)]
         {
-            static LAST_DEBUG_LOG: std::sync::atomic::AtomicU64 =
-                std::sync::atomic::AtomicU64::new(0);
+            static DRAIN_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |since| since.as_millis() as u64);
-
-            if timestamp.saturating_sub(LAST_DEBUG_LOG.load(std::sync::atomic::Ordering::Relaxed))
-                >= 1000
-            {
-                LAST_DEBUG_LOG.store(timestamp, std::sync::atomic::Ordering::Relaxed);
+            let calls = DRAIN_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if calls % 50 == 0 {
                 for (pid, _) in self.map.iter_mut() {
-                    eprintln!("fas-debug: drain_targets sees analyzer for PID {pid}");
+                    eprintln!("fas-debug: drain_targets call #{calls} sees analyzer for PID {pid}");
                 }
             }
         }
