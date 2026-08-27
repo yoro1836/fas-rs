@@ -58,7 +58,8 @@ rocket = { version = "0.5.0", features = ["json"] }
 [profile.dev]
 overflow-checks = false
 opt-level = 3
-strip = true
+debug = 1
+strip = false
 
 [profile.release]
 overflow-checks = false
