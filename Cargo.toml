@@ -42,7 +42,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 sys-mount = { version = "3.0.1", default-features = false }
 quick-xml = { version = "0.39.0", features = ["serialize"] }
 mlua = { version = "0.11.6", features = ["luajit", "vendored", "error-send"] }
-frame-analyzer = { path = "vendor/frame-analyzer" }
+frame-analyzer = "0.3.4"
 dumpsys-rs = { git = "https://github.com/shadow3aaa/dumpsys-rs" }
 mimalloc = { version = "0.1.48", features = ["no_thp", "override"] }
 num_cpus = "1.17.0"
@@ -58,8 +58,7 @@ rocket = { version = "0.5.0", features = ["json"] }
 [profile.dev]
 overflow-checks = false
 opt-level = 3
-debug = 1
-strip = false
+strip = true
 
 [profile.release]
 overflow-checks = false

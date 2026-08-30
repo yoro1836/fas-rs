@@ -769,6 +769,8 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 [[package]]
 name = "frame-analyzer"
 version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecf8b73c073dc52621b2026b06d712df02eb17de48a1f7aa85273dd4ec464744"
 dependencies = [
  "anyhow",
  "aya 0.13.1",
