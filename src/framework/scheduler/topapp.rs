@@ -57,8 +57,8 @@ impl WindowsInfo {
 
         let mut pids = Vec::new();
         for pkg in packages {
-            let Some(pid) = Self::parse_a16_format(dump, pkg)
-                .or_else(|| Self::parse_a15_format(dump, pkg))
+            let Some(pid) =
+                Self::parse_a16_format(dump, pkg).or_else(|| Self::parse_a15_format(dump, pkg))
             else {
                 continue;
             };
@@ -160,20 +160,40 @@ impl TopAppsWatcher {
 
     fn cache(&mut self) -> &WindowsInfo {
         if self.last_refresh.elapsed() > REFRESH_TIME {
-            let dump = loop {
-                match self.windows_dumper.dump(&["visible-apps"]) {
+            let dump_section = |section: &str| loop {
+                match self.windows_dumper.dump(&[section]) {
                     Ok(dump) => break dump,
                     Err(e) => {
-                        log::error!("Failed to dump windows: {e}, retrying");
+                        log::error!("Failed to dump window {section}: {e}, retrying");
                         std::thread::sleep(Duration::from_secs(1));
                     }
                 }
             };
+            let mut dump = dump_section("visible-apps");
+            dump.push('\n');
+            dump.push_str(&dump_section("windows"));
             self.cache = WindowsInfo::new(&dump);
 
             self.last_refresh = Instant::now();
         }
 
         &self.cache
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WindowsInfo;
+
+    #[test]
+    fn parses_focused_app_pid_from_separate_samsung_sections() {
+        let dump = r#"
+  mFocusedApp=ActivityRecord{121775421 u0 com.gameloft.android.ANMP.GloftA9HM/.MainActivity t726}
+WINDOW MANAGER WINDOWS (dumpsys window windows)
+  Window #14 Window{e4d836f u0 com.gameloft.android.ANMP.GloftA9HM/com.gameloft.android.ANMP.GloftA9HM.MainActivity}:
+    mDisplayId=0 taskId=726 mSession=Session{c5f6913 29977:u0a10331} mClient=android.os.BinderProxy@5ea664e
+"#;
+
+        assert_eq!(WindowsInfo::new(dump).pids, vec![29977]);
     }
 }

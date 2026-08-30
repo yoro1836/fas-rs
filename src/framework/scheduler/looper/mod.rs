@@ -25,7 +25,7 @@ use frame_analyzer::Analyzer;
 use likely_stable::{likely, unlikely};
 #[cfg(debug_assertions)]
 use log::debug;
-use log::info;
+use log::{error, info};
 use policy::{ControllerParams, controll::calculate_control};
 
 use super::{FasData, thermal::Thermal, topapp::TopAppsWatcher};
@@ -123,7 +123,9 @@ impl Looper {
     pub fn enter_loop(&mut self) -> Result<()> {
         loop {
             self.switch_mode();
-            let _ = self.update_analyzer();
+            if let Err(error) = self.update_analyzer() {
+                error!("Failed to update frame analyzer: {error}");
+            }
             self.retain_topapp();
 
             if self.windows_watcher.visible_freeform_window() {
@@ -194,7 +196,9 @@ impl Looper {
                 self.analyzer_state.restart_timer = Instant::now();
                 self.analyzer_state.restart_counter = 0;
                 self.analyzer_state.analyzer.detach_apps();
-                let _ = self.update_analyzer();
+                if let Err(error) = self.update_analyzer() {
+                    error!("Failed to restart frame analyzer: {error}");
+                }
             }
         } else {
             self.analyzer_state.restart_counter += 1;
